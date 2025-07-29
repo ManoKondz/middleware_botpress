@@ -1,47 +1,50 @@
+// server.js
 const express = require('express')
-const multer = require('multer')
-const fs = require('fs')
+const axios = require('axios')
 const cors = require('cors')
 const { createClient } = require('@supabase/supabase-js')
 
 const app = express()
 app.use(cors())
-const upload = multer({ dest: 'uploads/' })
+app.use(express.json({ limit: '10mb' })) // para aceitar JSON grande
 
+// Supabase Client - use sua service_role key para upload privado
 const supabase = createClient(
   'https://ovncoamtrycpyqagavvi.supabase.co',
-  'sb_publishable_tSmAKhJJiwE4y0hXmtS38w_IutyGpmg'
+  'sb_publishable_tSmAKhJJiwE4y0hXmtS38w_IutyGpmg' // Atenção: esta é a chave publishable. Ideal usar service_role em produção
 )
 
-app.post('/upload', upload.single('arquivo'), async (req, res) => {
+app.post('/upload', async (req, res) => {
+  const { imageUrl } = req.body
+  if (!imageUrl) return res.status(400).json({ error: 'imageUrl é obrigatório' })
+
   try {
-    const file = req.file
-    if (!file) return res.status(400).json({ erro: 'Arquivo não enviado' })
+    // Baixa imagem da URL informada
+    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' })
+    const buffer = Buffer.from(response.data, 'binary')
 
-    const caminhoNoBucket = `arquivos/${Date.now()}_${file.originalname}`
-    const fileBuffer = fs.readFileSync(file.path)
+    // Nome único para o arquivo no bucket
+    const fileName = `arquivos/${Date.now()}.png`
 
+    // Faz upload para Supabase Storage
     const { error } = await supabase.storage
       .from('uploads')
-      .upload(caminhoNoBucket, fileBuffer, {
-        contentType: file.mimetype,
+      .upload(fileName, buffer, {
+        contentType: 'image/png'
       })
 
-    fs.unlinkSync(file.path)
+    if (error) return res.status(500).json({ error: error.message })
 
-    if (error) return res.status(500).json({ erro: error.message })
-
-    const { data } = supabase.storage
-      .from('uploads')
-      .getPublicUrl(caminhoNoBucket)
+    // Pega URL pública do arquivo
+    const { data } = supabase.storage.from('uploads').getPublicUrl(fileName)
 
     return res.json({ url: data.publicUrl })
   } catch (err) {
-    return res.status(500).json({ erro: err.message })
+    return res.status(500).json({ error: err.message })
   }
 })
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`)
+  console.log(`Middleware rodando na porta ${PORT}`)
 })
