@@ -1,49 +1,43 @@
-// server.js
 const express = require('express')
-const axios = require('axios')
+const multer = require('multer')
+const fs = require('fs')
 const { createClient } = require('@supabase/supabase-js')
 
 const app = express()
-app.use(express.json({ limit: '10mb' }))
+const upload = multer({ dest: 'uploads/' })
 
-// Configure com suas credenciais Supabase (service_role key)
+// Dados fixos do Supabase
 const supabase = createClient(
   'https://ovncoamtrycpyqagavvi.supabase.co',
-  'SUA_SERVICE_ROLE_KEY_AQUI' // Chave service_role obrigatória para upload privado
+  'sb_publishable_tSmAKhJJiwE4y0hXmtS38w_IutyGpmg' // Publishable key, serve só pra testes
 )
 
-app.post('/upload', async (req, res) => {
-  try {
-    const imageUrl = req.body?.imageUrl || req.query?.imageUrl
-    if (!imageUrl) return res.status(400).json({ error: 'imageUrl é obrigatório' })
+app.post('/upload', upload.single('arquivo'), async (req, res) => {
+  const file = req.file
+  const caminho = `arquivos/${Date.now()}_${file.originalname}`
+  const buffer = fs.readFileSync(file.path)
 
-    // Baixa imagem da URL fornecida
-    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' })
-    const buffer = Buffer.from(response.data, 'binary')
+  const { error } = await supabase
+    .storage
+    .from('uploads')
+    .upload(caminho, buffer, {
+      contentType: file.mimetype
+    })
 
-    // Gera nome único para arquivo
-    const fileName = `arquivos/${Date.now()}.png`
+  fs.unlinkSync(file.path)
 
-    // Upload para Supabase Storage
-    const { error } = await supabase.storage
-      .from('uploads')
-      .upload(fileName, buffer, {
-        contentType: 'image/png'
-      })
-
-    if (error) return res.status(500).json({ error: error.message })
-
-    // Obter URL pública do arquivo
-    const { data } = supabase.storage.from('uploads').getPublicUrl(fileName)
-
-    return res.json({ publicUrl: data.publicUrl })
-  } catch (err) {
-    return res.status(500).json({ error: err.message })
+  if (error) {
+    return res.status(500).json({ erro: error.message })
   }
+
+  const { data } = supabase
+    .storage
+    .from('uploads')
+    .getPublicUrl(caminho)
+
+  res.json({ url: data.publicUrl })
 })
 
-// Porta padrão para Render, Railway, etc.
-const PORT = process.env.PORT || 4000
-app.listen(PORT, () => {
-  console.log(`Middleware rodando na porta ${PORT}`)
+app.listen(3000, () => {
+  console.log('Servidor rodando na porta 3000')
 })
