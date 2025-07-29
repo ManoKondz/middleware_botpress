@@ -6,40 +6,49 @@ const { createClient } = require('@supabase/supabase-js')
 
 const app = express()
 app.use(cors())
-app.use(express.json({ limit: '10mb' })) // para aceitar JSON grande
+app.use(express.json({ limit: '10mb' })) // aceita JSON grande
 
-// Supabase Client - use sua service_role key para upload privado
+// Configurar Supabase client - use service_role key para produção
 const supabase = createClient(
   'https://ovncoamtrycpyqagavvi.supabase.co',
-  'sb_publishable_tSmAKhJJiwE4y0hXmtS38w_IutyGpmg' // Atenção: esta é a chave publishable. Ideal usar service_role em produção
+  'sb_publishable_tSmAKhJJiwE4y0hXmtS38w_IutyGpmg' // substitua pela service_role para produção segura
 )
 
 app.post('/upload', async (req, res) => {
   const { imageUrl } = req.body
-  if (!imageUrl) return res.status(400).json({ error: 'imageUrl é obrigatório' })
+  if (!imageUrl) {
+    return res.status(400).json({ error: 'imageUrl é obrigatório' })
+  }
 
   try {
-    // Baixa imagem da URL informada
+    console.log('Recebendo imageUrl:', imageUrl)
+
+    // Baixa a imagem da URL
     const response = await axios.get(imageUrl, { responseType: 'arraybuffer' })
     const buffer = Buffer.from(response.data, 'binary')
 
-    // Nome único para o arquivo no bucket
     const fileName = `arquivos/${Date.now()}.png`
 
-    // Faz upload para Supabase Storage
+    // Upload para Supabase Storage
     const { error } = await supabase.storage
       .from('uploads')
       .upload(fileName, buffer, {
         contentType: 'image/png'
       })
 
-    if (error) return res.status(500).json({ error: error.message })
+    if (error) {
+      console.error('Erro ao fazer upload no Supabase:', error)
+      return res.status(500).json({ error: error.message })
+    }
 
-    // Pega URL pública do arquivo
+    // Obtem URL pública
     const { data } = supabase.storage.from('uploads').getPublicUrl(fileName)
 
+    console.log('Upload bem-sucedido:', data.publicUrl)
     return res.json({ url: data.publicUrl })
+
   } catch (err) {
+    console.error('Erro no processamento do upload:', err)
     return res.status(500).json({ error: err.message })
   }
 })
